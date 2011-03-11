@@ -18,6 +18,9 @@
                     },
                     beforeUpload: function() {
                     },
+                    onProgressChange: function() {},
+                    onComplete: function() {},
+                    onError: function() {},
                     url: "/upload"
                 },
                 initEventHandlers = function() {
@@ -41,44 +44,45 @@
 
 
                 legacyUpload = function (input, form, iframe, file, settings) {
-                    var originalTarget = form.attr('target');
-//                    originalAction = form.attr('action'),
+                    var originalTarget = form.attr('target'),
+                        originalAction = form.attr('action');
 //                    originalMethod = form.attr('method'),
 
                     iframe
-                            .unbind('abort')
-                            .bind('abort', function (e) {
-                        iframe.readyState = 0;
-                        // javascript:false as iframe src prevents warning popups on HTTPS in IE6
-                        // concat is used here to prevent the "Script URL" JSLint error:
-                        iframe.unbind('load').attr('src', 'javascript'.concat(':false;'));
-                        if (jQuery.isFunction(settings.onAbort)) {
-                            settings.onAbort(file);
-                        }
-                    })
-                            .unbind('load')
-                            .bind('load', function (e) {
-                        iframe.readyState = 4;
+                        .unbind('abort')
+                        .bind('abort', function (e) {
+                            iframe.readyState = 0;
+                            // javascript:false as iframe src prevents warning popups on HTTPS in IE6
+                            // concat is used here to prevent the "Script URL" JSLint error:
+                            iframe.unbind('load').attr('src', 'javascript'.concat(':false;'));
+                            if (jQuery.isFunction(settings.onAbort)) {
+                                settings.onAbort(file);
+                            }
+                        })
+                        .unbind('load')
+                        .bind('load', function (e) {
+                            iframe.readyState = 4;
 //                        if (typeof settings.onLoad === func) {
 //                            settings.onLoad(e, [{name: input.val(), type: null, size: null}], 0, iframe, settings);
 //                        }
                         // Fix for IE endless progress bar activity bug (happens on form submits to iframe targets):
-                        $('<iframe src="javascript:false;" style="display:none"></iframe>').appendTo(form).remove();
-                    });
-                    form
-//                    .attr('action', getUrl(settings.url))
+                            $('<iframe src="javascript:false;" style="display:none"></iframe>').appendTo(form).remove();
+                        });
+
+                    form.attr('target', iframe.attr('name'))
+                        .attr('action', form.attr('action') + '?X-Progress-ID=' + file.id);
 //                    .attr('method', getMethod(settings))
-                            .attr('target', iframe.attr('name'));
+
 //                legacyUploadFormDataInit(input, form, settings);
                     iframe.readyState = 2;
                     form.get(0).submit();
-                    //  window.setInterval( function () {  fetch(uuid);  }, 5000 );
+                    var intervalId = window.setInterval( function () {  fetch(file, intervalId);  }, 5000 );
 
 //                legacyUploadFormDataReset(input, form, settings);
-                    form
-//                    .attr('action', originalAction)
+                    form.attr('target', originalTarget)
+                        .attr('action', originalAction);
 //                    .attr('method', originalMethod)
-                            .attr('target', originalTarget);
+
                 },
 
                 handleLegacyUpload = function (event, input, form) {
@@ -88,6 +92,7 @@
                             uuid + '"></iframe>'),
                             uploadSettings = $.extend({}, settings);
                     var file = {
+                        name: input.val(),
                         id: uuid,
                         error: null,
                         size: null,
@@ -125,19 +130,38 @@
 //                settings.FileAdded(input.val(), null);
 //            },
 
-//            fetch = function(uuid) {
-//                $.ajax({
-//                          url: "/progress",
-//                          type: "GET",
-//                          headers: {
-//                            "X-Progress-ID":uuid
-//                          },
-//
-//                          success: function(data){
-//                            var upload = eval(data);
-//                          }
-//                });
-//            },
+            fetch = function(file, intervalId) {
+                $.ajax({
+                          url: "/progress",
+                          type: "GET",
+                          headers: {
+                            "X-Progress-ID":file.id
+                          },
+
+                          success: function(data){
+                            var upload = eval(data);
+                             if (upload.state == "uploading") {
+                                file.size = upload.size;
+                                file.percent = ((upload.received / upload.size) * 100);
+                                settings.onProgressChange(file);
+
+                            }
+                            if (upload.state == "error" || upload.state == "done") {
+
+                                if (upload.state == "done") {
+                                    file.percent = 100;
+                                    settings.onComplete(file);
+                                }
+
+                                if (upload.state == "error") {
+                                   settings.onError(file);
+                                }
+
+                                window.clearTimeout(intervalId);
+                            }
+                          }
+                });
+            },
 
 //            upload = function(input, form, iframe) {
 //                var originalAction = form.attr('action');
