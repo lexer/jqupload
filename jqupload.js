@@ -18,9 +18,12 @@
                     },
                     beforeUpload: function() {
                     },
-                    onProgressChange: function() {},
-                    onComplete: function() {},
-                    onError: function() {},
+                    onProgressChange: function() {
+                    },
+                    onComplete: function() {
+                    },
+                    onError: function() {
+                    },
                     url: "/upload"
                 },
                 initEventHandlers = function() {
@@ -62,25 +65,26 @@
                         .unbind('load')
                         .bind('load', function (e) {
                             iframe.readyState = 4;
-//                        if (typeof settings.onLoad === func) {
-//                            settings.onLoad(e, [{name: input.val(), type: null, size: null}], 0, iframe, settings);
-//                        }
-                        // Fix for IE endless progress bar activity bug (happens on form submits to iframe targets):
+    //                        if (typeof settings.onLoad === func) {
+    //                            settings.onLoad(e, [{name: input.val(), type: null, size: null}], 0, iframe, settings);
+    //                        }
+                            // Fix for IE endless progress bar activity bug (happens on form submits to iframe targets):
                             $('<iframe src="javascript:false;" style="display:none"></iframe>').appendTo(form).remove();
                         });
 
-                    form.attr('target', iframe.attr('name'))
+                    form
+                        .attr('target', iframe.attr('name'))
                         .attr('action', form.attr('action') + '?X-Progress-ID=' + file.id);
 //                    .attr('method', getMethod(settings))
 
-//                legacyUploadFormDataInit(input, form, settings);
                     iframe.readyState = 2;
                     form.get(0).submit();
-                    var intervalId = window.setInterval( function () {  fetch(file, intervalId);  }, 5000 );
+                    var intervalId = window.setInterval(function () {
+                        fetch(file, intervalId);
+                    }, 5000);
 
-//                legacyUploadFormDataReset(input, form, settings);
                     form.attr('target', originalTarget)
-                        .attr('action', originalAction);
+                            .attr('action', originalAction);
 //                    .attr('method', originalMethod)
 
                 },
@@ -99,12 +103,8 @@
                         progress: 0
                     };
 
-//                uploadSettings.fileInput = input;
-//                uploadSettings.uploadForm = form;
                     iframe.readyState = 0;
-//                    iframe.abort = function () {
-//                        iframe.trigger('abort');
-//                    };
+
                     iframe.bind('load',
                             function () {
                                 iframe.unbind('load');
@@ -116,33 +116,19 @@
                             }).appendTo(form);
                 },
 
-//            handleUpload = function(event, input, form) {
-//                var iframe = $('<iframe src="javascript:false;" style="display:none" name="iframe_' + settings.namespace + '_' + (new Date()).getTime() + '"></iframe>');
-//                iframe.readyState = 0;
-//                iframe.unbind("load").bind('load', function() {
-//                    iframe.unbind('load');
-//                    handleFileAdded(event, input, form, iframe);
-//                    upload(input, form, iframe);
-//                }).appendTo(form);
-//            },
-
-//            handleFileAdded = function(event, input, form, iframe){
-//                settings.FileAdded(input.val(), null);
-//            },
-
-            fetch = function(file, intervalId) {
-                $.ajax({
-                          url: "/progress",
-                          type: "GET",
-                          headers: {
+                fetch = function(file, intervalId) {
+                    $.ajax({
+                        url: "/progress",
+                        type: "GET",
+                        headers: {
                             "X-Progress-ID":file.id
-                          },
+                        },
 
-                          success: function(data){
+                        success: function(data) {
                             var upload = eval(data);
-                             if (upload.state == "uploading") {
+                            if (upload.state == "uploading") {
                                 file.size = upload.size;
-                                file.percent = ((upload.received / upload.size) * 100);
+                                file.percent = (upload.received / upload.size) * 100;
                                 settings.onProgressChange(file);
 
                             }
@@ -154,36 +140,14 @@
                                 }
 
                                 if (upload.state == "error") {
-                                   settings.onError(file);
+                                    settings.onError(file);
                                 }
 
                                 window.clearTimeout(intervalId);
                             }
-                          }
-                });
-            },
-
-//            upload = function(input, form, iframe) {
-//                var originalAction = form.attr('action');
-//                var originalMethod = form.attr('method');
-//                var originalTarget = form.attr('target');
-//
-//                var uuid = getProgressID();
-//                var url = settings.url + "/?X-Progress-ID=" + uuid;
-//
-//                form
-//                    .attr('action', url)
-//                    .attr('method', "POST")
-//                    .attr('target', iframe.attr('name'));
-//
-//                form.submit();
-//                window.setInterval( function () {  fetch(uuid);  }, 5000 );
-//
-//                form
-//                   .attr('action', originalAction)
-//                   .attr('method', originalMethod)
-//                   .attr('target', originalTarget);
-//            },
+                        }
+                    });
+                },
 
                 initUploadForm = function() {
                     uploadForm = (container.is('form') ? container : container.find('form'));
@@ -255,7 +219,7 @@
         } else if (typeof method === 'object' || ! method) {
             return methods.init.apply(this, arguments);
         } else {
-            $.error('Method ' + method + ' does not exist on jQuery.ajaxForm');
+            $.error('Method ' + method + ' does not exist on jQuery.jqUpload');
         }
     };
 })(jQuery);
