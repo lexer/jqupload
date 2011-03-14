@@ -6,34 +6,44 @@
  * To change this template use File | Settings | File Templates.
  */
 (function($) {
-    var defaultNamespace = 'file_upload';
     var UploadFile = function(container) {
-        var that = this,
+        var self = this,
+                files = [],
                 fileInput,
                 uploadForm,
                 settings = {
-                    namespace: defaultNamespace,
-//                FileAdded: function() {},
-                    onAbort: function() {
-                    },
-                    beforeUpload: function() {
-                    },
-                    onProgressChange: function() {
-                    },
-                    onComplete: function() {
-                    },
-                    onError: function() {
-                    },
+                    onAbort: function() {},
+                    beforeUpload: function() {},
+                    onProgressChange: function() {},
+                    onComplete: function() {},
+                    onError: function() {},
                     url: "/upload"
                 },
+
                 initEventHandlers = function() {
                     fileInput.change(onChange);
                 },
+
+                initUploadForm = function() {
+                    uploadForm = (container.is('form') ? container : container.find('form'));
+                },
+
+                initFileInput = function() {
+                    fileInput = uploadForm.find('input:file');
+                }
+
                 onChange = function (e) {
                     var input = $(e.target);
                     var form = $(e.target.form);
                     handleLegacyUpload(e, input, form);
                 },
+
+                replaceFileInput = function (input) {
+                    var inputClone = input.clone(true);
+                    $('<form/>').append(inputClone).get(0).reset();
+                    input.after(inputClone).detach();
+                    initFileInput();
+                };
 
                 getUUID = function() {
                     var uuid = "";
@@ -45,6 +55,14 @@
                     return uuid;
                 },
 
+                getFile = function(id) {
+                    var i;
+                    for (i = files.length - 1; i >= 0; i--) {
+                        if (files[i].id === id) {
+                            return files[i];
+                        }
+                    }
+                },
 
                 legacyUpload = function (input, form, iframe, file, settings) {
                     var originalTarget = form.attr('target'),
@@ -54,7 +72,6 @@
                     iframe
                         .unbind('abort')
                         .bind('abort', function (e) {
-                            iframe.readyState = 0;
                             // javascript:false as iframe src prevents warning popups on HTTPS in IE6
                             // concat is used here to prevent the "Script URL" JSLint error:
                             iframe.unbind('load').attr('src', 'javascript'.concat(':false;'));
@@ -64,7 +81,6 @@
                         })
                         .unbind('load')
                         .bind('load', function (e) {
-                            iframe.readyState = 4;
     //                        if (typeof settings.onLoad === func) {
     //                            settings.onLoad(e, [{name: input.val(), type: null, size: null}], 0, iframe, settings);
     //                        }
@@ -72,21 +88,25 @@
                             $('<iframe src="javascript:false;" style="display:none"></iframe>').appendTo(form).remove();
                         });
 
-                    form
-                        .attr('target', iframe.attr('name'))
+                    form.attr('target', iframe.attr('name'))
                         .attr('action', form.attr('action') + '?X-Progress-ID=' + file.id);
 //                    .attr('method', getMethod(settings))
 
-                    iframe.readyState = 2;
-                    form.get(0).submit();
-                    var intervalId = window.setInterval(function () {
-                        fetch(file, intervalId);
-                    }, 5000);
 
+                    //input.appendTo(uploadForm);
+
+                    form.submit(function(e) {
+                        var intervalId = window.setInterval(function () {
+                            fetch(file);
+                        }, 5000);
+                        file.intervalId = intervalId;
+                    });
+
+                    form.submit();
+                    replaceFileInput(input);
                     form.attr('target', originalTarget)
                             .attr('action', originalAction);
 //                    .attr('method', originalMethod)
-
                 },
 
                 handleLegacyUpload = function (event, input, form) {
@@ -103,6 +123,8 @@
                         progress: 0
                     };
 
+                    files.push(file);
+
                     iframe.readyState = 0;
 
                     iframe.bind('load',
@@ -115,23 +137,21 @@
                                 legacyUpload(input, form, iframe, file, uploadSettings);
                             }).appendTo(form);
                 },
-
-                fetch = function(file, intervalId) {
+            
+                fetch = function(file) {
                     $.ajax({
                         url: "/progress",
                         type: "GET",
                         headers: {
                             "X-Progress-ID":file.id
                         },
-
-                        success: function(data) {
-                            var upload = eval(data);
+                        success: function(upload) {
                             if (upload.state == "uploading") {
                                 file.size = upload.size;
                                 file.percent = (upload.received / upload.size) * 100;
                                 settings.onProgressChange(file);
-
                             }
+                            
                             if (upload.state == "error" || upload.state == "done") {
 
                                 if (upload.state == "done") {
@@ -143,18 +163,10 @@
                                     settings.onError(file);
                                 }
 
-                                window.clearTimeout(intervalId);
+                                window.clearTimeout(file.intervalId);
                             }
                         }
                     });
-                },
-
-                initUploadForm = function() {
-                    uploadForm = (container.is('form') ? container : container.find('form'));
-                },
-
-                initFileInput = function() {
-                    fileInput = uploadForm.find('input:file');
                 };
 
         this.init = function(options) {
@@ -169,6 +181,7 @@
 
         this.abort = function(fileId) {
             container.find("iframe[name='iframe_" + fileId + "']").trigger('abort');
+            clearInterval(getFile(fileId).intervalId);
         }
     };
 

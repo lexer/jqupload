@@ -6,3 +6,4 @@ tmp/**/*
 .idea*
 /jqupload.php
 /index.html
+/jqupload.css
