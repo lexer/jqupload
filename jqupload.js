@@ -22,7 +22,9 @@
                     onUploadStart: function() {},
                     onProgressChange: function() {},
                     onComplete: function() {},
-                    onError: function() {}
+                    onError: function() {},
+                    mockProgress:false,
+                    mockFileSize: 1024 * 1024
                 },
 
                 onChange = function (e) {
@@ -31,7 +33,7 @@
                         id: getUUID(),
                         error: null,
                         size: null,
-                        progress: 0
+                        percent : 0
                     };
 
                     filesQueue.push(file);
@@ -145,6 +147,20 @@
 
 
                 fetch = function(file) {
+                    if (settings.mockProgress) {
+                        file.size = settings.mockFileSize;
+                        file.percent = file.percent + 50;
+                        settings.onProgressChange(file);
+                        if (file.percent == 100) {
+
+                            settings.onComplete(file);
+                            window.clearTimeout(file.timerId);
+                        }
+
+                        return;
+                    }
+
+
                     $.ajax({
                         url: "/progress",
                         type: "GET",
