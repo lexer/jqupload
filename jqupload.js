@@ -5,45 +5,110 @@
  * Time: 11:11 AM
  * To change this template use File | Settings | File Templates.
  */
+
 (function($) {
+
     var UploadFile = function(container) {
         var self = this,
-                files = [],
+                parallelUploadSize = 3,
+                uploadQueue = [],
+                filesQueue = [],
                 fileInput,
+                hiddenFormsContainer,
                 uploadForm,
                 settings = {
                     onAbort: function() {},
-                    beforeUpload: function() {},
+                    onFileAdd: function() {},
+                    onUploadStart: function() {},
                     onProgressChange: function() {},
                     onComplete: function() {},
                     onError: function() {},
                     url: "/upload"
                 },
 
-                initEventHandlers = function() {
-                    fileInput.change(onChange);
-                },
-
-                initUploadForm = function() {
-                    uploadForm = (container.is('form') ? container : container.find('form'));
-                },
-
-                initFileInput = function() {
-                    fileInput = uploadForm.find('input:file');
-                }
-
                 onChange = function (e) {
-                    var input = $(e.target);
-                    var form = $(e.target.form);
-                    handleLegacyUpload(e, input, form);
+                    var file = {
+                        name: fileInput.val(),
+                        id: getUUID(),
+                        error: null,
+                        size: null,
+                        progress: 0
+                    };
+
+                    filesQueue.push(file);
+
+                    createNewForm(file);
+
+                    tryUpload();
                 },
 
-                replaceFileInput = function (input) {
-                    var inputClone = input.clone(true);
-                    $('<form/>').append(inputClone).get(0).reset();
-                    input.after(inputClone).detach();
-                    initFileInput();
-                };
+
+                onComplete = function(file) {
+                    removeFile(file, uploadQueue);
+                    
+                    if (jQuery.isFunction(settings.onComplete)) {
+                        settings.onComplete(file);
+                    }
+                    tryUpload();
+                },
+
+                onError = function(file) {
+                    removeFile(file, uploadQueue);
+
+                    if (jQuery.isFunction(settings.onError)) {
+                      settings.onError(file);
+                    }
+                    tryUpload();
+                },
+
+                removeFile = function(file, collection) {
+                    var i;
+                    for (i = collection.length - 1; i >= 0; i--) {
+                        if (collection[i].id === file.id) {
+                            collection.splice(i, 1);
+                        }
+                    }
+                },
+
+                createNewForm = function(file) {
+					
+                    var originalFormAction = uploadForm.attr("action");
+                    uploadForm.find("iframe").remove();
+					
+					var cloneForm = uploadForm.clone();
+					var id = file.id;
+
+					var iframe = $('<iframe src="javascript:false;" style="display:none" name="iframe_' + id + '"></iframe>');
+                    uploadForm.attr('id', "form_" + id);
+                    uploadForm.attr('target', iframe.attr('name'));
+                    uploadForm.attr("action", originalFormAction + '?X-Progress-ID=' + file.id);
+					iframe.appendTo(uploadForm);
+					
+                    cloneForm[0].reset();
+                    uploadForm.replaceWith(cloneForm);
+                    uploadForm.appendTo(hiddenFormsContainer);
+					
+                    uploadForm.submit(function(e) {
+                        if (jQuery.isFunction(settings.onUploadStart)) {
+                            settings.onUploadStart(file);
+                        }
+                        var intervalId = window.setInterval(function () {
+                            file.timerId = intervalId;
+                            fetch(file);
+                        }, 5000);
+
+                    });
+
+					uploadForm = cloneForm;
+					fileInput = uploadForm.find("input[name='file']");
+					fileInput.change(onChange);
+
+                    if (jQuery.isFunction(settings.onFileAdd)) {
+                       settings.onFileAdd(file);
+                    }
+
+					return uploadForm;
+                },
 
                 getUUID = function() {
                     var uuid = "";
@@ -55,89 +120,29 @@
                     return uuid;
                 },
 
-                getFile = function(id) {
+                getFileForm = function(file) {
+                     return hiddenFormsContainer.find("#form_" + file.id);
+                },
+
+                getFile = function(id, collection) {
                     var i;
-                    for (i = files.length - 1; i >= 0; i--) {
-                        if (files[i].id === id) {
-                            return files[i];
+                    for (i = collection.length - 1; i >= 0; i--) {
+                        if (collection[i].id === id) {
+                            return collection[i];
                         }
                     }
                 },
 
-                legacyUpload = function (input, form, iframe, file, settings) {
-                    var originalTarget = form.attr('target'),
-                        originalAction = form.attr('action');
-//                    originalMethod = form.attr('method'),
-
-                    iframe
-                        .unbind('abort')
-                        .bind('abort', function (e) {
-                            // javascript:false as iframe src prevents warning popups on HTTPS in IE6
-                            // concat is used here to prevent the "Script URL" JSLint error:
-                            iframe.unbind('load').attr('src', 'javascript'.concat(':false;'));
-                            if (jQuery.isFunction(settings.onAbort)) {
-                                settings.onAbort(file);
-                            }
-                        })
-                        .unbind('load')
-                        .bind('load', function (e) {
-    //                        if (typeof settings.onLoad === func) {
-    //                            settings.onLoad(e, [{name: input.val(), type: null, size: null}], 0, iframe, settings);
-    //                        }
-                            // Fix for IE endless progress bar activity bug (happens on form submits to iframe targets):
-                            $('<iframe src="javascript:false;" style="display:none"></iframe>').appendTo(form).remove();
-                        });
-
-                    form.attr('target', iframe.attr('name'))
-                        .attr('action', form.attr('action') + '?X-Progress-ID=' + file.id);
-//                    .attr('method', getMethod(settings))
-
-
-                    //input.appendTo(uploadForm);
-
-                    form.submit(function(e) {
-                        var intervalId = window.setInterval(function () {
-                            fetch(file);
-                        }, 5000);
-                        file.intervalId = intervalId;
-                    });
-
-                    form.submit();
-                    replaceFileInput(input);
-                    form.attr('target', originalTarget)
-                            .attr('action', originalAction);
-//                    .attr('method', originalMethod)
+                tryUpload = function() {
+                    if (uploadQueue.length < parallelUploadSize && filesQueue.length > 0) {
+                        var file = filesQueue.shift();
+                        uploadQueue.push(file);
+                        getFileForm(file).submit();
+                        
+                    }
                 },
 
-                handleLegacyUpload = function (event, input, form) {
-                    // javascript:false as iframe src prevents warning popups on HTTPS in IE6:
-                    var uuid = getUUID();
-                    var iframe = $('<iframe src="javascript:false;" style="display:none" name="iframe_' +
-                            uuid + '"></iframe>'),
-                            uploadSettings = $.extend({}, settings);
-                    var file = {
-                        name: input.val(),
-                        id: uuid,
-                        error: null,
-                        size: null,
-                        progress: 0
-                    };
 
-                    files.push(file);
-
-                    iframe.readyState = 0;
-
-                    iframe.bind('load',
-                            function () {
-                                iframe.unbind('load');
-                                if (jQuery.isFunction(uploadSettings.beforeUpload)) {
-                                    uploadSettings.beforeUpload(file);
-                                }
-
-                                legacyUpload(input, form, iframe, file, uploadSettings);
-                            }).appendTo(form);
-                },
-            
                 fetch = function(file) {
                     $.ajax({
                         url: "/progress",
@@ -146,24 +151,25 @@
                             "X-Progress-ID":file.id
                         },
                         success: function(upload) {
-                            if (upload.state == "uploading") {
+                            if (upload.state === "uploading") {
                                 file.size = upload.size;
                                 file.percent = (upload.received / upload.size) * 100;
-                                settings.onProgressChange(file);
+                                if (jQuery.isFunction(settings.onProgressChange)) {
+                                    settings.onProgressChange(file);
+                                }
                             }
-                            
-                            if (upload.state == "error" || upload.state == "done") {
 
-                                if (upload.state == "done") {
+                            if (upload.state === "error" || upload.state === "done") {
+                                if (upload.state === "done") {
                                     file.percent = 100;
-                                    settings.onComplete(file);
+                                    onComplete(file);
                                 }
 
-                                if (upload.state == "error") {
-                                    settings.onError(file);
+                                if (upload.state === "error" && getFile(file,uploadQueue)) {
+                                    onError(file);
                                 }
-
-                                window.clearTimeout(file.intervalId);
+                                window.clearTimeout(file.timerId);
+                                getFileForm(file).remove();
                             }
                         }
                     });
@@ -173,35 +179,50 @@
             if (options) {
                 $.extend(settings, options);
             }
+            uploadForm = (container.is('form') ? container : container.find('form'));
+            fileInput = uploadForm.find('input:file');
+			
+            hiddenFormsContainer =  $("<div style='display:none;'></div>").attr("id", "forms_"+container.attr("id"));
+            hiddenFormsContainer.insertAfter(container);
 
-            initUploadForm();
-            initFileInput();
-            initEventHandlers();
+            fileInput.change(onChange);
         };
 
         this.abort = function(fileId) {
-            container.find("iframe[name='iframe_" + fileId + "']").trigger('abort');
-            clearInterval(getFile(fileId).intervalId);
-        }
+            var file = getFile(fileId, uploadQueue);
+
+            if (file) {
+                window.clearInterval(file.timerId);
+                getFileForm(file).find("iframe").attr('src', 'javascript'.concat(':false;'));
+                getFileForm(file).remove();
+                removeFile(file, uploadQueue);
+                tryUpload();
+            } else {
+                file = getFile(fileId, filesQueue);
+                if (file) {
+                    getFileForm(file).remove();
+                    removeFile(file, filesQueue);
+                }
+            }
+
+            if (jQuery.isFunction(settings.onAbort)) {
+                settings.onAbort(file);
+            }
+        };
     };
 
     var methods = {
         init : function(options) {
             return this.each(function () {
-
                 var $this = $(this),
                         data = $this.data('jqUpload');
-
-                if (! data) {
-
+                if (!data) {
                     var upload = new UploadFile($this);
                     upload.init(options);
-
                     $(this).data('jqUpload', {
                         target : $this,
                         upload : upload
                     });
-
                 }
             });
         },
@@ -210,6 +231,13 @@
             return this.each(function () {
                 var fileUpload = $(this).data('jqUpload').upload;
                 fileUpload.abort(fileId);
+            });
+        },
+
+        upload: function() {
+            return this.each(function () {
+                var fileUpload = $(this).data('jqUpload').upload;
+                fileUpload.upload();
             });
         },
 
