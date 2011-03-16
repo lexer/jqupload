@@ -22,8 +22,7 @@
                     onUploadStart: function() {},
                     onProgressChange: function() {},
                     onComplete: function() {},
-                    onError: function() {},
-                    url: "/upload"
+                    onError: function() {}
                 },
 
                 onChange = function (e) {
@@ -74,11 +73,13 @@
 					
                     var originalFormAction = uploadForm.attr("action");
                     uploadForm.find("iframe").remove();
-					
+
+                    uploadForm.find("input[name='file']").unbind("change");
 					var cloneForm = uploadForm.clone();
 					var id = file.id;
 
 					var iframe = $('<iframe src="javascript:false;" style="display:none" name="iframe_' + id + '"></iframe>');
+
                     uploadForm.attr('id', "form_" + id);
                     uploadForm.attr('target', iframe.attr('name'));
                     uploadForm.attr("action", originalFormAction + '?X-Progress-ID=' + file.id);
@@ -90,7 +91,7 @@
 					
                     uploadForm.submit(function(e) {
                         if (jQuery.isFunction(settings.onUploadStart)) {
-                            settings.onUploadStart(file);
+                            settings.onUploadStart(file, uploadForm);
                         }
                         var intervalId = window.setInterval(function () {
                             file.timerId = intervalId;
@@ -166,7 +167,7 @@
                                 }
 
                                 if (upload.state === "error" && getFile(file,uploadQueue)) {
-                                    onError(file);
+                                    onError(file, upload);
                                 }
                                 window.clearTimeout(file.timerId);
                                 getFileForm(file).remove();
