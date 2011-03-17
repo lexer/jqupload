@@ -85,6 +85,8 @@
                     uploadForm.attr('id', "form_" + id);
                     uploadForm.attr('target', iframe.attr('name'));
                     uploadForm.attr("action", originalFormAction + '?X-Progress-ID=' + file.id);
+                    uploadForm.find("div input[name='utf8']").remove();
+                    uploadForm.find("div input[name='authenticity_token']").remove();
 					iframe.appendTo(uploadForm);
 					
                     cloneForm[0].reset();
