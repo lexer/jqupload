@@ -29,9 +29,8 @@
 
                 onChange = function (e) {
                     var fullName = fileInput.val();
-                    var name = fullName.match(/[^\/\\]+$/);
                     var file = {
-                        name: name,
+                        name: fullName.match(/[^\/\\]+$/).toString(),
                         id: getUUID(),
                         error: null,
                         size: null,
