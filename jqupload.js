@@ -28,8 +28,10 @@
                 },
 
                 onChange = function (e) {
+                    var fullName = fileInput.val();
+                    var name = fullName.match(/[^\/\\]+$/);
                     var file = {
-                        name: fileInput.val(),
+                        name: name,
                         id: getUUID(),
                         error: null,
                         size: null,
@@ -95,7 +97,7 @@
 					
                     uploadForm.submit(function(e) {
                         if (jQuery.isFunction(settings.onUploadStart)) {
-                            settings.onUploadStart(file, uploadForm);
+                            settings.onUploadStart(file, $(e.target));
                         }
                         var intervalId = window.setInterval(function () {
                             file.timerId = intervalId;
