@@ -184,7 +184,7 @@
                                     onComplete(file);
                                 }
 
-                                if (upload.state === "error" && getFile(file,uploadQueue)) {
+                                if (upload.state === "error") {
                                     onError(file, upload);
                                 }
                                 window.clearTimeout(file.timerId);
