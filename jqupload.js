@@ -7,69 +7,151 @@
  */
 
 (function($) {
+    var FileState = {
+        Waiting: 0,
+        Aborted: 1,
+        Started: 2,
+        Uploading: 3,
+        Error: 4,
+        Completed: 5
+    };
+
+    function File (id,name) {
+        this.id = id;
+        this.name = name;
+        this.error = null;
+        this.size = 1;
+        this.received = 1;
+        this.state = FileState.Waiting;
+        this.startDate = null;
+
+    }
+
+     File.prototype = {
+
+            elapsedTime: function() {
+                return new Date() - this.startDate;
+            },
+
+            percent: function() {
+                return ((this.received / this.size) * 100).toFixed(2);
+            },
+
+            leftTime: function() {
+                return (this.size - this.received) / this.speed();
+            },
+
+            speed: function() {
+                return this.received / this.elapsedTime();
+            },
+
+            abort:function() {
+              this.state = FileState.Aborted;
+              $(this).trigger("abort");
+            },
+
+            startUpload:function() {
+                var self = this;
+                this.state = FileState.Started;
+                window.setTimeout(function(){
+                    self.updateProgress();
+                }, 5000);
+            },
+
+            updateProgress:function() {
+                var self = this;
+                $.ajax({
+                        url: "/progress",
+                        type: "GET",
+                        headers: {
+                            "X-Progress-ID": self.id
+                        },
+                        success: function(upload) {
+                            if (upload.state === "uploading") {
+                                self.size = upload.size;
+                                self.received = upload.received;
+
+                                if (self.state === FileState.Started) {
+                                  $(self).trigger('started');
+                                }
+                                self.state = FileState.Uploading;
+                                $(self).trigger('progress');
+
+                                window.setTimeout(function(){
+                                     self.updateProgress();
+                                    }, 5000);
+                            }
+
+                            if (upload.state === "error" || upload.state === "done") {
+                                if (upload.state === "done") {
+//                                    self.onComplete(self);
+                                    self.state = FileState.Completed;
+                                    $(self).trigger('complete');
+
+                                }
+
+                                if (upload.state === "error") {
+                                    self.state= FileState.Error;
+                                     $(self).trigger('error');
+                                }
+                            }
+                        }
+                    });
+            }
+     };
 
     var UploadFile = function(container) {
         var self = this,
-                parallelUploadSize = 3,
-                uploadQueue = [],
-                filesQueue = [],
+                files = [],
                 fileInput,
                 hiddenFormsContainer,
                 uploadForm,
                 settings = {
-                    onAbort: function() {},
-                    onFileAdd: function() {},
+//                    onFileAdd: function() {},
                     onUploadStart: function() {},
-                    onProgressChange: function() {},
-                    onComplete: function() {},
-                    onError: function() {},
-                    mockProgress:false,
-                    mockFileSize: 1024 * 1024
+                    uploadQueueLimit : 1
                 },
 
                 onChange = function (e) {
                     var fullName = fileInput.val();
-                    var file = {
-                        name: fullName.match(/[^\/\\]+$/).toString(),
-                        id: getUUID(),
-                        error: null,
-                        size: null,
-                        percent : 0
-                    };
 
-                    filesQueue.push(file);
+                    var file = new File(getUUID(),fullName.match(/[^\/\\]+$/).toString());
+
+
+                    $(file).one("complete", function() {
+                        $(this).unbind("error");
+                        $(this).unbind("abort");
+                        onComplete(file);})
+                            .one("error", function() {
+                        $(this).unbind("complete");
+                        $(this).unbind("abort");
+                        onError(file);})
+                            .one("abort", function() {
+                        $(this).unbind("complete");
+                        $(this).unbind("error");
+                        onAbort(file);
+                    });
+
+                    files.push(file);
 
                     createNewForm(file);
-
                     tryUpload();
                 },
 
-
                 onComplete = function(file) {
-                    removeFile(file, uploadQueue);
-                    
-                    if (jQuery.isFunction(settings.onComplete)) {
-                        settings.onComplete(file);
-                    }
+                    getFileForm(file).remove();
                     tryUpload();
                 },
 
                 onError = function(file) {
-                    removeFile(file, uploadQueue);
-
-                    if (jQuery.isFunction(settings.onError)) {
-                      settings.onError(file);
-                    }
+                    getFileForm(file).remove();
                     tryUpload();
                 },
 
-                removeFile = function(file, collection) {
-                    var i;
-                    for (i = collection.length - 1; i >= 0; i--) {
-                        if (collection[i].id === file.id) {
-                            collection.splice(i, 1);
-                        }
-                    }
+                onAbort = function(file) {
+                       getFileForm(file).find("iframe").attr('src', 'javascript'.concat(':false;'));
+                       getFileForm(file).remove();
+                       tryUpload();
                 },
 
                 createNewForm = function(file) {
@@ -77,7 +159,7 @@
                     var originalFormAction = uploadForm.attr("action");
                     uploadForm.find("iframe").remove();
 
-                    uploadForm.find("input[name='file']").unbind("change");
+//                    uploadForm.find("input[name='file']").unbind("change");
 					var cloneForm = uploadForm.clone();
 					var id = file.id;
 
@@ -95,23 +177,18 @@
                     uploadForm.appendTo(hiddenFormsContainer);
 					
                     uploadForm.submit(function(e) {
-                        if (jQuery.isFunction(settings.onUploadStart)) {
-                            settings.onUploadStart(file, $(e.target));
-                        }
-                        var intervalId = window.setInterval(function () {
-                            file.timerId = intervalId;
-                            fetch(file);
-                        }, 5000);
-
+                        $(e.target).find("input[name='key']").attr("value", file.id + "/"+ '${filename}');
+                        file.startUpload();
                     });
 
 					uploadForm = cloneForm;
 					fileInput = uploadForm.find("input[name='file']");
-					fileInput.change(onChange);
+					fileInput.one("change", onChange);
 
-                    if (jQuery.isFunction(settings.onFileAdd)) {
-                       settings.onFileAdd(file);
-                    }
+//                    if (jQuery.isFunction(settings.onFileAdd)) {
+//                       settings.onFileAdd(file);
+//                    }
+                    $(container).trigger("fileAdd.jqUpload",file);
 
 					return uploadForm;
                 },
@@ -130,70 +207,63 @@
                      return hiddenFormsContainer.find("#form_" + file.id);
                 },
 
-                getFile = function(id, collection) {
-                    var i;
-                    for (i = collection.length - 1; i >= 0; i--) {
-                        if (collection[i].id === id) {
-                            return collection[i];
-                        }
+                getFilesByState = function(fileState) {
+                  return $.map(files,function(element){
+                    if (element.state === fileState){
+                        return element;
                     }
+                    return null;
+                  });
+                },
+
+                getWaitingFiles = function(){
+                  return getFilesByState(FileState.Waiting);
+                },
+
+                getUploadingFiles = function(){
+                  return getFilesByState(FileState.Uploading);
+                },
+
+                getStartedOrUploadingFiles =  function() {
+                    return $.map(files,function(element){
+                        if (element.state === FileState.Uploading || element.state === FileState.Started){
+                            return element;
+                        }
+                        return null;
+                    });
                 },
 
                 tryUpload = function() {
-                    if (uploadQueue.length < parallelUploadSize && filesQueue.length > 0) {
-                        var file = filesQueue.shift();
-                        uploadQueue.push(file);
-                        getFileForm(file).submit();
-                        
+                    var waitingFiles = getWaitingFiles();
+                    var startedOrUploadingFiles = getStartedOrUploadingFiles();
+                    if (startedOrUploadingFiles.length < settings.uploadQueueLimit && waitingFiles.length > 0) {
+                       var file =  waitingFiles[0];
+                       getFileForm(file).submit();
                     }
-                },
-
-
-                fetch = function(file) {
-                    if (settings.mockProgress) {
-                        file.size = settings.mockFileSize;
-                        file.percent = file.percent + 50;
-                        settings.onProgressChange(file);
-                        if (file.percent == 100) {
-
-                            settings.onComplete(file);
-                            window.clearTimeout(file.timerId);
-                        }
-
-                        return;
-                    }
-
-
-                    $.ajax({
-                        url: "/progress",
-                        type: "GET",
-                        headers: {
-                            "X-Progress-ID":file.id
-                        },
-                        success: function(upload) {
-                            if (upload.state === "uploading") {
-                                file.size = upload.size;
-                                file.percent = (upload.received / upload.size) * 100;
-                                if (jQuery.isFunction(settings.onProgressChange)) {
-                                    settings.onProgressChange(file);
-                                }
-                            }
-
-                            if (upload.state === "error" || upload.state === "done") {
-                                if (upload.state === "done") {
-                                    file.percent = 100;
-                                    onComplete(file);
-                                }
-
-                                if (upload.state === "error") {
-                                    onError(file, upload);
-                                }
-                                window.clearTimeout(file.timerId);
-                                getFileForm(file).remove();
-                            }
-                        }
-                    });
                 };
+
+        this.updateProgress = function() {
+           $.each(getUploadingFiles(), function(file) {
+                file.updateProgress();
+           }) ;
+
+        };
+
+        this.getFiles = function () {
+            return files;
+        };
+        this.getUploadingFiles = function() {
+           return getUploadingFiles();
+        };
+
+        this.getFileById = function(fileId) {
+            var i;
+            for (i = files.length - 1; i >= 0; i--) {
+                if (files[i].id === fileId) {
+                    return files[i];
+                }
+            }
+        };
 
         this.init = function(options) {
             if (options) {
@@ -206,28 +276,6 @@
             hiddenFormsContainer.insertAfter(container);
 
             fileInput.change(onChange);
-        };
-
-        this.abort = function(fileId) {
-            var file = getFile(fileId, uploadQueue);
-
-            if (file) {
-                window.clearInterval(file.timerId);
-                getFileForm(file).find("iframe").attr('src', 'javascript'.concat(':false;'));
-                getFileForm(file).remove();
-                removeFile(file, uploadQueue);
-                tryUpload();
-            } else {
-                file = getFile(fileId, filesQueue);
-                if (file) {
-                    getFileForm(file).remove();
-                    removeFile(file, filesQueue);
-                }
-            }
-
-            if (jQuery.isFunction(settings.onAbort)) {
-                settings.onAbort(file);
-            }
         };
     };
 
@@ -244,30 +292,42 @@
                         upload : upload
                     });
                 }
+//                $this.bind('fileAdd.jqUpload', methods.fileAdd);
             });
         },
 
-        abort : function(fileId) {
-            return this.each(function () {
-                var fileUpload = $(this).data('jqUpload').upload;
-                fileUpload.abort(fileId);
-            });
+
+
+        getFiles: function() {
+               var $this = $(this),
+                        data = $this.data('jqUpload');
+               return data.upload.getFiles();
         },
 
-        upload: function() {
-            return this.each(function () {
-                var fileUpload = $(this).data('jqUpload').upload;
-                fileUpload.upload();
-            });
+        getUploadingFiles: function() {
+                var $this = $(this),
+                        data = $this.data('jqUpload');
+               return data.upload.getUploadingFiles();
+        },
+
+        getFileById: function(fileId) {
+            var $this = $(this),
+                        data = $this.data('jqUpload');
+               return data.upload.getFileById(fileId);
+        },
+
+        fileAdd: function(e) {
+            //...
         },
 
         destroy : function() {
+
             return this.each(function() {
 
                 var $this = $(this),
                         data = $this.data('jqUpload');
 
-                $(window).unbind('.jqUpload');
+                $this.unbind('.jqUpload');
                 data.upload.remove();
                 $this.removeData('jqUpload');
             })
